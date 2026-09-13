@@ -1,0 +1,88 @@
+# Network diagnostics on a FRITZ!Box: traceroute and DNS lookup live
+# under a vendor object, not at the IGD root.
+#
+# The baseline netdiag-tr098 binds them to
+# InternetGatewayDevice.TraceRouteDiagnostics. and .NSLookupDiagnostics.,
+# which the 2116-parameter survey shows do not exist on FRITZ!OS 8.25.
+# AVM puts both under InternetGatewayDevice.X_AVM-DE_DiagnosticTools.
+# The effect was two buttons on the Actions tab that could only fault.
+#
+# Ping is NOT re-pointed: InternetGatewayDevice.IPPingDiagnostics. is at
+# the standard location on AVM and the baseline binding is correct, so
+# those nine entries are restated here unchanged. A vendor table replaces
+# the baseline one wholesale, so anything omitted is lost.
+#
+# AVM's leaf set is not the spec's. Three baseline canonicals have no
+# target here and are deliberately left unmapped rather than pointed at
+# an invented path:
+#
+#   traceroute.response_time  - no ResponseTime leaf
+#   traceroute.hop_count      - no RouteHops table; AVM returns one flat
+#                               Result string instead
+#   dns.success_count         - no SuccessCount leaf
+#   dns.result_count          - no Result.{i} table, same flat string
+#
+# and DNS spells the queried name `Host`, where the spec says `HostName`.
+# The flat Result strings are parsed by the normalizers in actions.yaml.
+apiVersion: mapping.herder.io/v1alpha1
+kind: MappingTable
+metadata:
+  name: netdiag-avm
+spec:
+  mappings:
+    # --- Ping: standard location, identical to netdiag-tr098 ---
+    - canonical: canonical.diagnostics.ping.state
+      valueType: string
+      devicePath: InternetGatewayDevice.IPPingDiagnostics.DiagnosticsState
+    - canonical: canonical.diagnostics.ping.host
+      valueType: string
+      devicePath: InternetGatewayDevice.IPPingDiagnostics.Host
+    - canonical: canonical.diagnostics.ping.repetitions
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.IPPingDiagnostics.NumberOfRepetitions
+    - canonical: canonical.diagnostics.ping.timeout
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.IPPingDiagnostics.Timeout
+    - canonical: canonical.diagnostics.ping.success_count
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.IPPingDiagnostics.SuccessCount
+    - canonical: canonical.diagnostics.ping.failure_count
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.IPPingDiagnostics.FailureCount
+    - canonical: canonical.diagnostics.ping.rtt_avg
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.IPPingDiagnostics.AverageResponseTime
+    - canonical: canonical.diagnostics.ping.rtt_min
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.IPPingDiagnostics.MinimumResponseTime
+    - canonical: canonical.diagnostics.ping.rtt_max
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.IPPingDiagnostics.MaximumResponseTime
+
+    # --- Traceroute: X_AVM-DE_DiagnosticTools ---
+    - canonical: canonical.diagnostics.traceroute.state
+      valueType: string
+      devicePath: InternetGatewayDevice.X_AVM-DE_DiagnosticTools.TraceRouteDiagnostics.DiagnosticsState
+    - canonical: canonical.diagnostics.traceroute.host
+      valueType: string
+      devicePath: InternetGatewayDevice.X_AVM-DE_DiagnosticTools.TraceRouteDiagnostics.Host
+    - canonical: canonical.diagnostics.traceroute.tries
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.X_AVM-DE_DiagnosticTools.TraceRouteDiagnostics.NumberOfTries
+    - canonical: canonical.diagnostics.traceroute.timeout
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.X_AVM-DE_DiagnosticTools.TraceRouteDiagnostics.Timeout
+    - canonical: canonical.diagnostics.traceroute.max_hops
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.X_AVM-DE_DiagnosticTools.TraceRouteDiagnostics.MaxHopCount
+
+    # --- DNS lookup: X_AVM-DE_DiagnosticTools, and `Host` not `HostName` ---
+    - canonical: canonical.diagnostics.dns.state
+      valueType: string
+      devicePath: InternetGatewayDevice.X_AVM-DE_DiagnosticTools.NSLookupDiagnostics.DiagnosticsState
+    - canonical: canonical.diagnostics.dns.hostname
+      valueType: string
+      devicePath: InternetGatewayDevice.X_AVM-DE_DiagnosticTools.NSLookupDiagnostics.Host
+    - canonical: canonical.diagnostics.dns.server
+      valueType: string
+      devicePath: InternetGatewayDevice.X_AVM-DE_DiagnosticTools.NSLookupDiagnostics.DNSServer

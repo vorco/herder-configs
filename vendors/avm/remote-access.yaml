@@ -1,0 +1,60 @@
+# Remote access to the FRITZ!Box web UI, including the account behind it.
+#
+# The baseline remote-access-tr098 binds the four
+# UserInterface.RemoteAccess leaves, which AVM implements exactly as the
+# spec has them; those are restated here unchanged. What it cannot bind
+# is the account, so the remote-access module rendered `username` and
+# `password` empty on every FRITZ!Box.
+#
+# avm.yaml originally deferred this: "which slot is the remote account is
+# per-firmware and needs a survey, so remote-access-avm is deferred
+# rather than guessed (a wrong instance faults every session)". The
+# survey has now run, and the answer is unambiguous on 256.08.25 — there
+# is exactly ONE User instance:
+#
+#   InternetGatewayDevice.User.1.Username              RW
+#   InternetGatewayDevice.User.1.Password              RW
+#   InternetGatewayDevice.User.1.Enable                RW
+#   InternetGatewayDevice.User.1.RemoteAccessCapable   RW   reads 1
+#   InternetGatewayDevice.User.1.Language              RW
+#   InternetGatewayDevice.User.1.X_AVM-DE_2FA_off      RW
+#
+# Read live from the ring:early box: RemoteAccessCapable = 1, so User.1
+# is the remote-capable account. Username is currently "" and Enable "0"
+# — the account exists but is unconfigured, so the module will render the
+# fields empty until something provisions them. That is a different
+# problem from having nowhere to read them from.
+#
+# The caution in the original comment still applies to OTHER firmware: a
+# box with several User instances needs the remote-capable one picked by
+# RemoteAccessCapable rather than by index. Re-check with
+# survey-datamodel before extending this table past 256.08.25; one
+# instance is what makes a hardcoded .1 safe here.
+#
+# The module declares password `secret: true`, so it is write-only,
+# sealed into task_secrets for the one SetParameterValues that carries
+# it, and never collected by telemetry.
+apiVersion: mapping.herder.io/v1alpha1
+kind: MappingTable
+metadata:
+  name: remote-access-avm
+spec:
+  mappings:
+    - canonical: canonical.mgmt.remote_access.enable
+      valueType: boolean
+      devicePath: InternetGatewayDevice.UserInterface.RemoteAccess.Enable
+    - canonical: canonical.mgmt.remote_access.port
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.UserInterface.RemoteAccess.Port
+    - canonical: canonical.mgmt.remote_access.protocol
+      valueType: string
+      devicePath: InternetGatewayDevice.UserInterface.RemoteAccess.Protocol
+    - canonical: canonical.mgmt.remote_access.supported_protocols
+      valueType: string
+      devicePath: InternetGatewayDevice.UserInterface.RemoteAccess.SupportedProtocols
+    - canonical: canonical.mgmt.remote_access.username
+      valueType: string
+      devicePath: InternetGatewayDevice.User.1.Username
+    - canonical: canonical.mgmt.remote_access.password
+      valueType: string
+      devicePath: InternetGatewayDevice.User.1.Password

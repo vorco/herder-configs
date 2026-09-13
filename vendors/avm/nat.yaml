@@ -1,0 +1,94 @@
+# Port forwards on a FRITZ!Box, on whichever WAN connection family the
+# box is using.
+#
+# TR-098 hangs PortMapping under a WAN connection instance, so the table
+# inherits the same problem interfaces-avm has: AVM instantiates only the
+# family in use, and this fleet runs both. The baseline nat-tr098 pins
+# WANIPConnection.1, which is why canonical.nat.port_forward resolved to
+# a WANIPConnection path on a box that had been PPPoE for an hour.
+#
+# UNVERIFIED RESOLUTION ORDER — read before trusting this file.
+#
+# interfaces-avm solves the same problem with a computed entry, which is
+# not available here: a computed entry writes one canonical value, and
+# this is a table of them. The mechanism used instead is two entries per
+# canonical, one per family. The config API accepts that (validated), but
+# NOTHING DOCUMENTS which entry wins when both are declared and only one
+# resolves. If the resolver takes the first entry unconditionally rather
+# than the first that resolves, this file is correct on PPPoE and wrong
+# on IPoE — which is the current bug mirrored, not fixed.
+#
+# PPPoE is listed first because that is what the trial fleet runs today,
+# so a first-wins resolver still leaves the fleet working while the
+# question is settled. Confirm it by flipping a box to IPoE and checking
+# canonical.nat.port_forward.1.* still resolves; if it does not, the
+# resolver is first-declared and this needs platform support (or a
+# tag-gated pair of tables, as interfaces-avm's fallback would have).
+apiVersion: mapping.herder.io/v1alpha1
+kind: MappingTable
+metadata:
+  name: nat-avm
+spec:
+  mappings:
+    - canonical: canonical.nat.port_forward
+      valueType: string
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.PortMapping
+    - canonical: canonical.nat.port_forward
+      valueType: string
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.PortMapping
+
+    - canonical: canonical.nat.port_forward.{i}.enabled
+      valueType: boolean
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.PortMapping.{i}.PortMappingEnabled
+    - canonical: canonical.nat.port_forward.{i}.enabled
+      valueType: boolean
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.PortMapping.{i}.PortMappingEnabled
+
+    - canonical: canonical.nat.port_forward.{i}.description
+      valueType: string
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.PortMapping.{i}.PortMappingDescription
+    - canonical: canonical.nat.port_forward.{i}.description
+      valueType: string
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.PortMapping.{i}.PortMappingDescription
+
+    - canonical: canonical.nat.port_forward.{i}.protocol
+      valueType: string
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.PortMapping.{i}.PortMappingProtocol
+    - canonical: canonical.nat.port_forward.{i}.protocol
+      valueType: string
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.PortMapping.{i}.PortMappingProtocol
+
+    - canonical: canonical.nat.port_forward.{i}.external_port
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.PortMapping.{i}.ExternalPort
+    - canonical: canonical.nat.port_forward.{i}.external_port
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.PortMapping.{i}.ExternalPort
+
+    - canonical: canonical.nat.port_forward.{i}.internal_port
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.PortMapping.{i}.InternalPort
+    - canonical: canonical.nat.port_forward.{i}.internal_port
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.PortMapping.{i}.InternalPort
+
+    - canonical: canonical.nat.port_forward.{i}.internal_client
+      valueType: string
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.PortMapping.{i}.InternalClient
+    - canonical: canonical.nat.port_forward.{i}.internal_client
+      valueType: string
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.PortMapping.{i}.InternalClient
+
+    - canonical: canonical.nat.port_forward.{i}.remote_host
+      valueType: string
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.PortMapping.{i}.RemoteHost
+    - canonical: canonical.nat.port_forward.{i}.remote_host
+      valueType: string
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.PortMapping.{i}.RemoteHost
+
+    - canonical: canonical.nat.port_forward.{i}.lease_duration
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.PortMapping.{i}.PortMappingLeaseDuration
+    - canonical: canonical.nat.port_forward.{i}.lease_duration
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.PortMapping.{i}.PortMappingLeaseDuration
