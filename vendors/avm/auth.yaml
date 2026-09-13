@@ -1,0 +1,64 @@
+# First-contact admission for AVM FRITZ!Box units.
+#
+# A FRITZ!Box presents its AVM factory credential on first contact:
+# username <OUI>-<SerialNumber> (confirmed on the wire as
+# 00040E-D424DD119378) and, as the password, the box's per-device
+# tr069_passphrase. AVM issues that passphrase per unit and the ISP never
+# receives it, so no bootstrap entry can verify it — there is no shared
+# password to hash, and a bootstrap list would need one entry per serial.
+#
+# admission.trust is the mechanism for exactly that case: admit the unit
+# without verifying its password, let credential bootstrap issue it a
+# credential of its own in the same session, and from its next session on
+# only that credential admits it. A factory-reset box is refused until an
+# operator revokes its credential under Devices.
+#
+# This supersedes the CWMP_AUTH_FACTORY_FILE approach (one factory_defaults
+# entry per serial, needing AVM's bulk passphrase list). Nothing here is a
+# secret, which is why it can live in Git.
+#
+# sourceRanges is the subscriber access pools, not the whole internet,
+# because trust verifies nothing else about the credential: whoever
+# reaches Herder from inside a listed range with a plausible
+# <OUI>-<SerialNumber> is admitted. Keeping the list to the networks the
+# units actually connect from is what bounds that. Add a range here when
+# the access footprint grows, or a box on the new pool is refused at
+# first contact and never gets a credential.
+#
+# readmitOnReset is deliberately absent, even now the ranges are narrow.
+# It would let trust re-admit a box that already holds a credential
+# whenever it presents 0 BOOTSTRAP, and trust cannot tell a
+# factory-reset unit from anyone else claiming its identity — so one
+# subscriber who guesses another's serial, from inside these same pools,
+# takes over that device's credential. FRITZ!Box serials derive from the
+# MAC and are not hard to guess. Revoking the credential by hand under
+# Devices is the safe path for a genuinely reset unit.
+#
+# window must outlast the fleet's periodic inform interval, because a box
+# whose session dropped before its credential landed comes back on that
+# interval and no longer sends 0 BOOTSTRAP. Herder paces informs at
+# base 900 + spread 300 (15-20 min, platform/provisioning/lib/periodic_inform.ts),
+# so 24h clears it with room to spare.
+apiVersion: auth.herder.io/v1alpha1
+kind: AuthPolicy
+metadata:
+  name: avm-fritzbox-admission
+spec:
+  priority: 100
+  deviceSelector:
+    matchLabels:
+      oui: "00040E"
+    matchExpressions:
+      - key: "protocol:cwmp"
+        operator: Exists
+  admission:
+    trust:
+      sourceRanges:
+        - "103.14.68.0/22"
+        - "43.245.80.0/22"
+        - "2404:5700::/32"
+      window: 24h
+      # The box presents no ProductClass in its Digest username, only OUI
+      # and serial, so this is the two-field form. A template naming a
+      # field the Inform leaves empty matches nothing.
+      username: "{OUI}-{SerialNumber}"
