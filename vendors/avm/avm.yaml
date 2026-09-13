@@ -167,6 +167,7 @@ spec:
     - wifi-capability-tr098
     - interfaces-avm
     - posture-avm
+    - wan-shaping-avm
     - voice-avm
     - nat-avm
 
@@ -211,12 +212,18 @@ spec:
       interval: 0
     - path: "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.{i}.WANPPPConnection.{i}.X_AVM-DE_Stackmode"
       interval: 0
-    # WAN link utilisation, both directions. Confirmed on
-    # WANDevice.{i}.WANCommonInterfaceConfig in the 8.24 model.
-    - path: "InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.X_AVM-DE_DownstreamCurrentUtilization"
+    # The contracted rate and its read-back, so the device page and any
+    # plan-compliance query can see both. kbit/s; see wan-shaping.yaml.
+    - path: "InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.Layer1DownstreamMaxBitRate"
       interval: 0
-    - path: "InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.X_AVM-DE_UpstreamCurrentUtilization"
+    - path: "InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.Layer1UpstreamMaxBitRate"
       interval: 0
+    # X_AVM-DE_{Down,Up}streamCurrentUtilization is deliberately NOT
+    # collected: it is a COMMA-SEPARATED LIST of 5-second samples, not a
+    # scalar, so it stores as a string and charts as nothing. The
+    # CurrentMaxSpeed pair above is the scalar throughput reading — and
+    # note it is in BYTES/s, unlike everything else here, which is
+    # kbit/s.
 
 ---
 # The FRITZ!OS update posture, in the operator namespace.

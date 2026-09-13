@@ -72,6 +72,13 @@ spec:
               - {label: Access type, canonical: canonical.interface.wan.type}
               - {label: WAN IP address, canonical: canonical.interface.wan.ip_address}
               - {label: Connection uptime, canonical: canonical.interface.wan.uptime, format: duration}
+              # Contracted rate and the box's read-back of it. Same
+              # setting seen from both sides (see wan-shaping.yaml): if
+              # these disagree, the last write did not land.
+              - {label: Plan downstream (kbit/s), canonical: canonical.operator.avm.wan_rate_down_kbit}
+              - {label: Plan upstream (kbit/s), canonical: canonical.operator.avm.wan_rate_up_kbit}
+              - {label: Reported downstream (kbit/s), canonical: canonical.operator.avm.wan_rate_down_actual_kbit}
+              - {label: Reported upstream (kbit/s), canonical: canonical.operator.avm.wan_rate_up_actual_kbit}
           - title: Management
             fields:
               - {label: Connection request URL, canonical: canonical.mgmt.connection_request_url}

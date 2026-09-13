@@ -1,0 +1,143 @@
+# WAN bandwidth on a FRITZ!Box: the plan rate, settable over CWMP.
+#
+# AVM exposes the connection speed twice, and only one of the two is
+# writable. Proven on the ring:early box (D424DD119014):
+#
+#   X_AVM-DE_DownstreamShapedRate   RW   "Bandwith Regulation in kb/s"
+#   X_AVM-DE_UpstreamShapedRate     RW
+#   Layer1DownstreamMaxBitRate      RO   what the GUI shows
+#   Layer1UpstreamMaxBitRate        RO
+#
+# They are the SAME SETTING. Writing ShapedRate 300000 -> 290000 moved
+# Layer1*MaxBitRate to 290000 in the same step, and setting 200/300 Mbps
+# in the FRITZ!Box GUI is what put 200000/300000 on Layer1 in the first
+# place. So ShapedRate is the writable face and Layer1 the read-back —
+# collect the second to confirm the first landed.
+#
+# UNITS ARE kbit/s. 300 Mbps is 300000, not 300 and not 300000000. This
+# is the single easiest thing to get wrong here and it is a subscriber's
+# line speed, so the provisioning script range-checks before writing.
+#
+# Do not confuse these with the two neighbouring AVM counters, which are
+# in BYTES per second, not kbit/s:
+#   X_AVM-DE_{Down,Up}streamCurrentMaxSpeed   max throughput last 100 s
+#   X_AVM-DE_{Down,Up}streamCurrentUtilization  comma-separated samples
+#
+# The canonicals are operator-namespaced: nothing reserved or baseline
+# covers a WAN rate, and canonical.operator.* carries no platform
+# semantics. The _kbit suffix is deliberate — a bare `wan_rate_down`
+# would be a unit bug waiting to happen.
+apiVersion: mapping.herder.io/v1alpha1
+kind: MappingTable
+metadata:
+  name: wan-shaping-avm
+spec:
+  mappings:
+    - canonical: canonical.operator.avm.wan_rate_down_kbit
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.X_AVM-DE_DownstreamShapedRate
+    - canonical: canonical.operator.avm.wan_rate_up_kbit
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.X_AVM-DE_UpstreamShapedRate
+    # Read-back. Same setting, reported side.
+    - canonical: canonical.operator.avm.wan_rate_down_actual_kbit
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.Layer1DownstreamMaxBitRate
+    - canonical: canonical.operator.avm.wan_rate_up_actual_kbit
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.Layer1UpstreamMaxBitRate
+
+---
+# Declared metadata keys for the plan rate.
+#
+# These are what an external provisioning system PATCHes onto a device
+# (PATCH /api/v1/devices/{id}, metadata merges by top-level key). A key
+# declared here is type-checked on the way in and the whole PATCH is
+# refused with 422 if it fails — so an OSS pushing "300Mbps" or a null
+# is rejected at the API rather than shipped to a subscriber's gateway.
+#
+# NOTE: a provisioning script CANNOT read these. The script SDK exposes
+# device.{id,oui,serialNumber,manufacturer,model,firmware,tags} and
+# ctx.config, and nothing for devices.metadata — so metadata can gate a
+# selector (meta:<key>) but its VALUE cannot reach a script. That is why
+# the convergence rule below reads tags instead. These declarations are
+# still worth having: they validate the push, render the plan in the
+# console, and make GET /v1/devices?meta.plan_down_kbit=... work.
+apiVersion: devices.herder.io/v1alpha1
+kind: DeviceField
+metadata:
+  name: plan-down-kbit
+spec:
+  key: plan_down_kbit
+  label: Plan downstream (kbit/s)
+  description: Contracted downstream rate in kbit/s. 300 Mbps is 300000.
+  type: integer
+
+---
+apiVersion: devices.herder.io/v1alpha1
+kind: DeviceField
+metadata:
+  name: plan-up-kbit
+spec:
+  key: plan_up_kbit
+  label: Plan upstream (kbit/s)
+  description: Contracted upstream rate in kbit/s. 100 Mbps is 100000.
+  type: integer
+
+---
+# Optional convergence: re-assert the plan rate on every contact.
+#
+# Not needed if the external system is happy to PATCH the parameter
+# directly (see the header of wan-shaping.ts for that call). It buys one
+# thing the direct write does not: the rate is re-applied on boot and on
+# every periodic pass, so a factory reset, a subscriber editing the
+# speed in the FRITZ!Box GUI, or a plan change pushed while the box was
+# offline all converge back to the contracted value.
+#
+# The rate arrives as TAGS rather than metadata, because a script cannot
+# read metadata (see the DeviceField note above). The external system
+# sets them on the same PATCH that sets metadata:
+#
+#   PATCH /api/v1/devices/{id}
+#   {"tags": ["plan-down-kbit:300000", "plan-up-kbit:300000", ...],
+#    "metadata": {"plan_down_kbit": 300000, "plan_up_kbit": 300000},
+#    "state_version": <the value you just read>}
+#
+# Tags REPLACE as a set, so the caller must send the device's other tags
+# too or they are dropped. Pass state_version to make the write
+# conditional — the device row is written by every CPE inform, and an
+# unconditional PATCH can quietly discard one.
+#
+# SHIPPED DISABLED. This writes a live bandwidth cap to subscriber
+# gateways. Turn it on for one ring:early box, confirm Layer1*MaxBitRate
+# reports back the rate you set and that throughput actually matches,
+# then widen.
+apiVersion: provisioning.herder.io/v1alpha1
+kind: ProvisioningRule
+metadata:
+  name: avm-wan-shaping
+spec:
+  triggers:
+    - first_contact
+    - boot
+    - periodic
+  deviceSelector:
+    matchLabels:
+      oui: "00040E"
+    matchExpressions:
+      - key: "protocol:cwmp"
+        operator: Exists
+  config:
+    # Tag prefixes carrying the rate. Value after the colon is kbit/s.
+    downTagPrefix: "plan-down-kbit:"
+    upTagPrefix: "plan-up-kbit:"
+    # Range guard, in kbit/s. A value outside this is treated as a
+    # mistake and the rule skips rather than applying it: 300 (0.3 Mbps)
+    # and 300000000 (300 Gbps) are both far likelier to be a unit error
+    # than a real plan, and both are service-affecting.
+    minKbit: 1000
+    maxKbit: 10000000
+  desired:
+    script: "wan-shaping.ts"
+  priority: 50
+  enabled: false
