@@ -25,22 +25,19 @@
 
 # ---------------------------------------------------------------------------
 # interfaces-avm: baseline interfaces-tr098, with the WAN address/uptime
-# re-pointed at WANPPPConnection.
+# resolved across both connection families instead of pinned to one.
 #
-# A FRITZ!Box on PPPoE (DSL, or Ethernet/ATA WAN to an ONT as on the
-# 7530 AX here) carries its external address on
-# WANPPPConnection.{i}.ExternalIPAddress, not WANIPConnection. The
-# baseline's instanceAlias resolves against WANIPConnection only, so on a
-# PPPoE box canonical.interface.wan.ip_address and .uptime resolve to
-# nothing — the WAN group on the device page renders blank and the
-# remote-access module's link (which reads wan.ip_address) breaks.
+# The baseline pins WANIPConnection; the first version of this file
+# pinned WANPPPConnection, on the assumption that a FRITZ!Box is always
+# PPPoE. Both are wrong, because AVM instantiates only the family the box
+# is configured for, and this fleet runs both PPPoE and IPoE. A pinned
+# table resolves to nothing on the other half of the fleet: the WAN group
+# on the device page renders blank and the remote-access module's link
+# (which reads wan.ip_address) breaks.
 #
-# The instance is found, not assumed: ConnectionStatus is the
-# discriminator (matchType EqualFold because AVM reports "Connected" but
-# other firmware casings exist), lowest matching instance wins, and
-# fallbackIndex keeps instance 1 for anything that reports no status.
-# Everything else (LAN ports wildcarded, WAN L1 status/type/counters) is
-# identical to interfaces-tr098.
+# The two WAN canonicals are therefore computed entries. Everything else
+# (LAN ports wildcarded, WAN L1 status/type/counters) is identical to
+# interfaces-tr098.
 apiVersion: mapping.herder.io/v1alpha1
 kind: MappingTable
 metadata:
@@ -74,27 +71,34 @@ spec:
     - canonical: canonical.interface.wan.bytes_received
       valueType: unsignedint
       devicePath: InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.TotalBytesReceived
-    # WAN address/uptime on the PPPoE connection. Instance found by
-    # ConnectionStatus. (verify: WANConnectionDevice.1 and the PPP
-    # instance against a live survey.)
+    # WAN address/uptime, on whichever connection family the box is
+    # actually using. Computed rather than aliased because an
+    # instanceAlias names one family in its `object`, and a FRITZ!Box
+    # instantiates only the family in use — see wan-active-ip.ts for the
+    # measurements and for why the discriminator is the NumberOfEntries
+    # counter rather than ConnectionStatus.
     - canonical: canonical.interface.wan.ip_address
+      type: computed
       valueType: string
-      instanceAlias:
-        object: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.
-        matchBy: ConnectionStatus
-        matchType: EqualFold
-        matchValue: Connected
-        fallbackIndex: 1
-      pathTemplate: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.{index}.ExternalIPAddress
+      computation:
+        script: vendors/avm/wan-active-ip.ts
+        inputs:
+          - InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnectionNumberOfEntries
+          - InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnectionNumberOfEntries
+          - InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.*
+          - InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.*
+        output: canonical.interface.wan.ip_address
     - canonical: canonical.interface.wan.uptime
+      type: computed
       valueType: unsignedint
-      instanceAlias:
-        object: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.
-        matchBy: ConnectionStatus
-        matchType: EqualFold
-        matchValue: Connected
-        fallbackIndex: 1
-      pathTemplate: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.{index}.Uptime
+      computation:
+        script: vendors/avm/wan-active-uptime.ts
+        inputs:
+          - InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnectionNumberOfEntries
+          - InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnectionNumberOfEntries
+          - InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.*
+          - InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.*
+        output: canonical.interface.wan.uptime
 
 ---
 # The mapping profile. Priority 50 beats baseline-tr098 (10).
@@ -166,54 +170,26 @@ spec:
       interval: 0
     - path: "InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.X_AVM-DE_WANAccessSwitchState"
       interval: 0
-    - path: "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.LastConnectionError"
+    # Both families, wildcarded. These two leaves exist on WANIPConnection
+    # and WANPPPConnection alike (confirmed in the FRITZ!OS 8.24 model and
+    # in the 2116-parameter survey), and the family the box is not using
+    # has no instances, so it resolves to nothing and faults nothing. The
+    # previous version named WANPPPConnection.1 outright, which is where
+    # two of the five cwmp:9005 rejections came from on an IPoE box.
+    - path: "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.{i}.WANIPConnection.{i}.LastConnectionError"
       interval: 0
-    - path: "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.X_AVM-DE_Stackmode"
+    - path: "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.{i}.WANIPConnection.{i}.X_AVM-DE_Stackmode"
       interval: 0
-
----
-# DSL line health, for DSL-connected subscribers. The 7530 is a DSL box;
-# the AX unit surveyed happens to be on Ethernet/ATA WAN with DSL
-# inactive, so on that unit these resolve empty (harmless). Status leaves
-# passive; error counters every 15 min. (verify the object exists on a
-# DSL-connected box.)
-apiVersion: telemetry.herder.io/v1alpha1
-kind: TelemetryProfile
-metadata:
-  name: avm-fritzbox-dsl
-spec:
-  priority: 50
-  deviceSelector:
-    matchLabels:
-      oui: "00040E"
-    matchExpressions:
-      - key: "dataModel:igd"
-        operator: Exists
-  parameters:
-    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.Status"
+    - path: "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.{i}.WANPPPConnection.{i}.LastConnectionError"
       interval: 0
-    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.StandardUsed"
+    - path: "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.{i}.WANPPPConnection.{i}.X_AVM-DE_Stackmode"
       interval: 0
-    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.UpstreamCurrRate"
+    # WAN link utilisation, both directions. Confirmed on
+    # WANDevice.{i}.WANCommonInterfaceConfig in the 8.24 model.
+    - path: "InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.X_AVM-DE_DownstreamCurrentUtilization"
       interval: 0
-    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.DownstreamCurrRate"
+    - path: "InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.X_AVM-DE_UpstreamCurrentUtilization"
       interval: 0
-    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.UpstreamNoiseMargin"
-      interval: 0
-    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.DownstreamNoiseMargin"
-      interval: 0
-    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.UpstreamAttenuation"
-      interval: 0
-    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.DownstreamAttenuation"
-      interval: 0
-    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.Stats.Total.CRCErrors"
-      interval: 900
-    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.Stats.Total.FECErrors"
-      interval: 900
-    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.Stats.Total.ErroredSecs"
-      interval: 900
-    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.Stats.Total.SeverelyErroredSecs"
-      interval: 900
 
 ---
 # System posture: per-port link state, firmware/maintenance/auto-update
