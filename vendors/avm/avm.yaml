@@ -1,27 +1,51 @@
 # AVM FRITZ!Box (TR-098 / InternetGatewayDevice.*) vendor support.
 #
-# AVM's CWMP data model is IGD. TR-181 (Device.*) exists on FRITZ!OS only
-# behind the USP agent, and USP is compiled out of the shipping fleet
-# firmware (256.08.25, OEM avme), so everything here is IGD.
+# AVM's CWMP data model is IGD, so everything here is IGD. The USP agent
+# IS present and running on 256.08.25 — it is already enrolled with AVM's
+# own controller (X_AVM-DE_USPController.1.EndpointID reads
+# "pen:872:myfritz-usp") — but it speaks TR-181 over TR-369, not over
+# CWMP. See usp-controller.yaml for enrolling Herder as a second
+# controller. An earlier note here claimed USP was compiled out, on the
+# strength of a diagnostic dump saying "502 Command usp not implemented";
+# that was the aicmd debug CLI missing, not the agent.
 #
-# What the baseline already covers with no vendor work: identity,
-# management credentials, standard WiFi/NAT/voice, diagnostics, and the
-# LAN switch ports. This directory adds the two things the baseline gets
-# wrong or cannot see on a FRITZ!Box:
-#   1. the WAN IP/uptime, which live on WANPPPConnection (PPPoE) here, not
-#      WANIPConnection where the baseline looks; and
-#   2. the X_AVM-DE_* telemetry leaves (WAN shaping, DSL line health,
-#      per-port link state, firmware/maintenance posture).
+# Everything in this directory was written against a full schema walk of
+# a 7530 AX on 256.08.25 (2116 parameters, not truncated). Every instance
+# number here is only valid for that firmware — re-run
+# POST /api/v1/schema/discover after a firmware change and re-check.
 #
 # Selector note: productClass is the generic string "FRITZ!Box" across
 # every AVM model, so it is useless for scoping — we key on the AVM OUI
-# 00040E instead. Model-specific documents (compliance, any future UI)
-# add `model In [...]` with the exact ModelName strings.
+# 00040E instead. Model-specific documents (compliance) add
+# `model In [...]` with the exact ModelName strings.
 #
-# Instance numbers marked "verify" below are taken from the FRITZ!OS 8.24
-# data model and one 7530 AX diagnostic dump, not yet from a live Herder
-# survey (the fleet had not authenticated when this was written). Re-check
-# them with survey-datamodel once a box registers.
+# KNOWN LIMITS, so they are not rediscovered:
+#
+#   Per-client WiFi signal has no CWMP path. AssociatedDevice.{i} carries
+#   only MacAddress, IPAddress and AuthenticationState — no RSSI, rate or
+#   band. The box has the data (a diagnostic dump shows rssi = -56,
+#   rate_active_tx and channel_width per station); it is simply not in
+#   the TR-069 model. It needs TR-369
+#   (Device.WiFi.AccessPoint.{i}.AssociatedDevice.{i}.SignalStrength), so
+#   it arrives with the USP work. The wifi-experience skill's per-client
+#   telemetry stays dark on CWMP until then.
+#
+#   No memory or CPU parameters exist at all. Zero hits for MemoryStatus,
+#   ProcessStatus or CPUUsage across the whole survey, and no X_AVM-DE_
+#   equivalent. The three baseline rejects on DeviceInfo.MemoryStatus.*
+#   and ProcessStatus.CPUUsage are permanent and correctly absorbed by
+#   the negative cache — one wasted GPV per device per firmware.
+#
+#   The negative cache is keyed per firmware, not per configuration. A
+#   box switched between IPoE and PPPoE keeps the other family's paths
+#   suppressed even once they exist, and there is no flush endpoint.
+#
+#   DSL telemetry is not shipped. The 12 WANDSLInterfaceConfig paths were
+#   written from the model rather than from a DSL-connected box, and on
+#   the Ethernet-WAN units here the object reports Status=Disabled with
+#   all-zero rates and margins — 12 zeroed series that read as a line at
+#   0 dB margin. Re-add once a DSL FRITZ!Box is in the fleet to verify
+#   against.
 
 # ---------------------------------------------------------------------------
 # interfaces-avm: baseline interfaces-tr098, with the WAN address/uptime
