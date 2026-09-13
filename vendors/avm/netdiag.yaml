@@ -75,6 +75,13 @@ spec:
     - canonical: canonical.diagnostics.traceroute.max_hops
       valueType: unsignedint
       devicePath: InternetGatewayDevice.X_AVM-DE_DiagnosticTools.TraceRouteDiagnostics.MaxHopCount
+    # The TR-098 baseline has nowhere to put this (the spec's IGD
+    # traceroute has no address-family leaf) so netdiag-tr098 omits it and
+    # the tr098 action profile sets a canonical that binds to nothing.
+    # AVM does expose it, so the input becomes real here.
+    - canonical: canonical.diagnostics.traceroute.protocol
+      valueType: string
+      devicePath: InternetGatewayDevice.X_AVM-DE_DiagnosticTools.TraceRouteDiagnostics.ProtocolVersion
 
     # --- DNS lookup: X_AVM-DE_DiagnosticTools, and `Host` not `HostName` ---
     - canonical: canonical.diagnostics.dns.state
