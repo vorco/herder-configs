@@ -129,10 +129,10 @@ spec:
 #
 # Binding is single-winner: the winning profile's table list is the
 # device's ENTIRE mapping vocabulary. So the whole baseline-tr098 list is
-# restated here, with interfaces-tr098 swapped for interfaces-avm. Drop
-# any of these and the FRITZ!Box loses that vocabulary — omit mgmt-tr098
-# and it has no connection_request_url and becomes undispatchable. Keep
-# this list in step with baseline/tr098/mappings.yaml (baseline-tr098).
+# restated here. Drop any of these and the FRITZ!Box loses that
+# vocabulary — omit mgmt-tr098 and it has no connection_request_url and
+# becomes undispatchable. Keep this list in step with
+# baseline/tr098/mappings.yaml (baseline-tr098).
 #
 # Five tables are swapped for AVM versions, each in its own file beside
 # this one, and each for a different reason:
@@ -166,6 +166,7 @@ spec:
     - wifi-bssid-tr098
     - wifi-capability-tr098
     - interfaces-avm
+    - posture-avm
     - voice-avm
     - nat-avm
 
@@ -216,6 +217,46 @@ spec:
       interval: 0
     - path: "InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.X_AVM-DE_UpstreamCurrentUtilization"
       interval: 0
+
+---
+# The FRITZ!OS update posture, in the operator namespace.
+#
+# These are the leaves that decide whether a firmware campaign can land
+# on a box, and the device page wants them in a group. A DeviceProfile
+# form field must name a canonical — a raw `path:` is rejected at load —
+# and no reserved or baseline canonical covers a vendor's update
+# posture, so they get operator names. canonical.operator.* is free for
+# exactly this and carries no platform semantics.
+#
+# Collected by avm-fritzbox-system below, rendered by the FRITZ!OS group
+# in device-profile.yaml. Keep the three in step.
+apiVersion: mapping.herder.io/v1alpha1
+kind: MappingTable
+metadata:
+  name: posture-avm
+spec:
+  mappings:
+    - canonical: canonical.operator.avm.firmware_subversion
+      valueType: string
+      devicePath: InternetGatewayDevice.DeviceInfo.AdditionalSoftwareVersion
+    - canonical: canonical.operator.avm.upgrade_available
+      valueType: boolean
+      devicePath: InternetGatewayDevice.UserInterface.UpgradeAvailable
+    - canonical: canonical.operator.avm.auto_update
+      valueType: string
+      devicePath: InternetGatewayDevice.UserInterface.X_AVM-DE_AutoUpdate
+    - canonical: canonical.operator.avm.maintenance_window_enabled
+      valueType: boolean
+      devicePath: InternetGatewayDevice.UserInterface.X_AVM-DE_MaintenanceWindow.Enabled
+    - canonical: canonical.operator.avm.maintenance_window_start
+      valueType: string
+      devicePath: InternetGatewayDevice.UserInterface.X_AVM-DE_MaintenanceWindow.Start
+    - canonical: canonical.operator.avm.tr069_firmware_download
+      valueType: boolean
+      devicePath: InternetGatewayDevice.ManagementServer.X_AVM-DE_TR069FirmwareDownloadEnabled
+    - canonical: canonical.operator.avm.unsupported_modifications
+      valueType: string
+      devicePath: InternetGatewayDevice.DeviceInfo.X_AVM-DE_VendorUnsupportedModifications
 
 ---
 # System posture: per-port link state, firmware/maintenance/auto-update

@@ -76,18 +76,20 @@ spec:
             fields:
               - {label: Connection request URL, canonical: canonical.mgmt.connection_request_url}
               - {label: Inform interval, canonical: canonical.mgmt.periodic_inform_interval, format: seconds}
-          # Raw paths: no canonical namespace covers a vendor's update
-          # posture, and these are the leaves that decide whether a
-          # firmware campaign can land on the box at all.
+          # The leaves that decide whether a firmware campaign can land.
+          # A form field must name a canonical (a raw `path:` is rejected
+          # at load), and nothing reserved covers a vendor's update
+          # posture, so these are operator names bound by posture-avm in
+          # avm.yaml and collected by avm-fritzbox-system.
           - title: FRITZ!OS
             fields:
-              - {label: Sub-version, path: "InternetGatewayDevice.DeviceInfo.AdditionalSoftwareVersion"}
-              - {label: Update available, path: "InternetGatewayDevice.UserInterface.UpgradeAvailable"}
-              - {label: Auto-update, path: "InternetGatewayDevice.UserInterface.X_AVM-DE_AutoUpdate"}
-              - {label: Maintenance window, path: "InternetGatewayDevice.UserInterface.X_AVM-DE_MaintenanceWindow.Enabled"}
-              - {label: Window start, path: "InternetGatewayDevice.UserInterface.X_AVM-DE_MaintenanceWindow.Start"}
-              - {label: ACS firmware download, path: "InternetGatewayDevice.ManagementServer.X_AVM-DE_TR069FirmwareDownloadEnabled"}
-              - {label: Unsupported modifications, path: "InternetGatewayDevice.DeviceInfo.X_AVM-DE_VendorUnsupportedModifications"}
+              - {label: Sub-version, canonical: canonical.operator.avm.firmware_subversion}
+              - {label: Update available, canonical: canonical.operator.avm.upgrade_available}
+              - {label: Auto-update, canonical: canonical.operator.avm.auto_update}
+              - {label: Maintenance window, canonical: canonical.operator.avm.maintenance_window_enabled}
+              - {label: Window start, canonical: canonical.operator.avm.maintenance_window_start}
+              - {label: ACS firmware download, canonical: canonical.operator.avm.tr069_firmware_download}
+              - {label: Unsupported modifications, canonical: canonical.operator.avm.unsupported_modifications}
     - key: interfaces
       title: Interfaces
       icon: ethernet-port
@@ -117,9 +119,6 @@ spec:
             component: module
             config:
               module: wifi
-    # WLANConfiguration.3 is the guest network on FRITZ!OS. It is a third
-    # radio entry to the generic WiFi module, which is not wrong but is
-    # not legible either; named here so the distinction survives.
     - key: voice
       title: Voice
       icon: phone
