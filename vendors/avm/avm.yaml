@@ -110,12 +110,14 @@ spec:
 # and it has no connection_request_url and becomes undispatchable. Keep
 # this list in step with baseline/tr098/mappings.yaml (baseline-tr098).
 #
-# remote-access-tr098 stays (it binds enable/port/protocol from
-# UserInterface.RemoteAccess, which AVM has). The remote-UI account's
-# username/password live under InternetGatewayDevice.User.{i}; which slot
-# is the remote account is per-firmware and needs a survey, so
-# remote-access-avm is deferred rather than guessed (a wrong instance
-# faults every session).
+# Five tables are swapped for AVM versions, each in its own file beside
+# this one, and each for a different reason:
+#
+#   interfaces-avm      WAN address/uptime across both connection families
+#   netdiag-avm         traceroute and DNS live under X_AVM-DE_DiagnosticTools
+#   voice-avm           line 2 is VoiceProfile.2.Line.1, not Line.2
+#   remote-access-avm   adds the User.1 account behind RemoteAccess
+#   nat-avm             PortMapping follows the live connection family
 apiVersion: mapping.herder.io/v1alpha1
 kind: MappingProfile
 metadata:
@@ -134,14 +136,14 @@ spec:
     - device-info-tr098
     - mgmt-tr098
     - diagnostics-tr098
-    - netdiag-tr098
-    - remote-access-tr098
+    - netdiag-avm
+    - remote-access-avm
     - wifi-tr098
     - wifi-bssid-tr098
     - wifi-capability-tr098
     - interfaces-avm
-    - voice-tr104
-    - nat-tr098
+    - voice-avm
+    - nat-avm
 
 ---
 # WAN telemetry the baseline tr098-wan cannot see: AVM shaping rates and

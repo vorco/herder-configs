@@ -1,0 +1,190 @@
+# Device UI profile for the FRITZ!Box family.
+#
+# Without this the boxes fall back to baseline-tr098-ui, which is
+# vendor-neutral and therefore silent about the two things a FRITZ!Box is
+# most used for. GET /devices/{id}/ui-profile returned `profile: None` on
+# the trial fleet; vendors/avm/ was the only vendor directory shipping no
+# DeviceProfile.
+#
+# Three sections differ from the baseline. Everything else is carried
+# over deliberately rather than inherited — a DeviceProfile replaces the
+# baseline outright, so an omitted section is a section the box loses.
+#
+#   voice        The baseline TR-098 profile has NO voice section at all.
+#                806 of this model's 2116 parameters are VoiceService,
+#                and a FRITZ!Box is a DECT base station and phone system
+#                as much as a router. canonical.voice.line.* now resolves
+#                for both lines via voice-avm.
+#
+#   interfaces   The faceplate is drawn from the box's real port layout.
+#                On a 7530 AX, LAN1 is in WAN mode
+#                (X_AVM-DE_EthPort.1.Portmode reads "WAN", read live),
+#                so the generic four-LAN-plus-WAN faceplate draws a port
+#                that is carrying the internet connection as an ordinary
+#                LAN socket. The WAN entity stays on canonical.interface.wan,
+#                which is the L1 view; LAN1 is labelled for what it is.
+#
+#   status       A FRITZ!OS group: firmware channel, auto-update and the
+#                maintenance window, which is what decides whether a
+#                firmware campaign will land. Collected by
+#                avm-fritzbox-system.
+#
+# Selector: OUI only. productClass is the generic string "FRITZ!Box" on
+# every AVM model and scopes nothing; model would scope this to the
+# 7530 AX and leave every other FRITZ!Box on the baseline. The port
+# faceplate is the one part that is genuinely model-shaped — a box with a
+# different port count needs its own profile above this one.
+apiVersion: deviceprofiles.herder.io/v1alpha1
+kind: DeviceProfile
+metadata:
+  name: avm-fritzbox-ui
+spec:
+  priority: 50
+  deviceSelector:
+    matchLabels:
+      oui: "00040E"
+    matchExpressions:
+      - key: "dataModel:igd"
+        operator: Exists
+  sections:
+    - key: overview
+      title: Overview
+      icon: gauge
+      component: overview
+    - key: status
+      title: Device status
+      icon: info
+      component: form
+      config:
+        groups:
+          - title: Identity
+            fields:
+              - {label: Manufacturer, canonical: canonical.device.manufacturer}
+              - {label: Model, canonical: canonical.device.model_name}
+              - {label: Product class, canonical: canonical.device.product_class}
+              - {label: Serial number, canonical: canonical.device.serial_number}
+              - {label: Hardware version, canonical: canonical.device.hardware_version}
+              - {label: Firmware, canonical: canonical.device.software_version}
+              - {label: Uptime, canonical: canonical.device.uptime, format: duration}
+          - title: WAN
+            fields:
+              - {label: Link status, canonical: canonical.interface.wan.status}
+              - {label: Access type, canonical: canonical.interface.wan.type}
+              - {label: WAN IP address, canonical: canonical.interface.wan.ip_address}
+              - {label: Connection uptime, canonical: canonical.interface.wan.uptime, format: duration}
+          - title: Management
+            fields:
+              - {label: Connection request URL, canonical: canonical.mgmt.connection_request_url}
+              - {label: Inform interval, canonical: canonical.mgmt.periodic_inform_interval, format: seconds}
+          # Raw paths: no canonical namespace covers a vendor's update
+          # posture, and these are the leaves that decide whether a
+          # firmware campaign can land on the box at all.
+          - title: FRITZ!OS
+            fields:
+              - {label: Sub-version, path: "InternetGatewayDevice.DeviceInfo.AdditionalSoftwareVersion"}
+              - {label: Update available, path: "InternetGatewayDevice.UserInterface.UpgradeAvailable"}
+              - {label: Auto-update, path: "InternetGatewayDevice.UserInterface.X_AVM-DE_AutoUpdate"}
+              - {label: Maintenance window, path: "InternetGatewayDevice.UserInterface.X_AVM-DE_MaintenanceWindow.Enabled"}
+              - {label: Window start, path: "InternetGatewayDevice.UserInterface.X_AVM-DE_MaintenanceWindow.Start"}
+              - {label: ACS firmware download, path: "InternetGatewayDevice.ManagementServer.X_AVM-DE_TR069FirmwareDownloadEnabled"}
+              - {label: Unsupported modifications, path: "InternetGatewayDevice.DeviceInfo.X_AVM-DE_VendorUnsupportedModifications"}
+    - key: interfaces
+      title: Interfaces
+      icon: ethernet-port
+      component: ports
+      config:
+        ports:
+          - {id: wan, label: WAN, kind: wan, entity: canonical.interface.wan}
+          # LAN1 carries the WAN on a 7530 AX (Portmode = WAN). Labelled
+          # so the faceplate does not read as five LAN sockets.
+          - {id: lan1, label: "1 (WAN)", kind: ethernet, entity: canonical.interface.lan.1}
+          - {id: lan2, label: "2", kind: ethernet, entity: canonical.interface.lan.2}
+          - {id: lan3, label: "3", kind: ethernet, entity: canonical.interface.lan.3}
+          - {id: lan4, label: "4", kind: ethernet, entity: canonical.interface.lan.4}
+          - {id: wifi24, label: 2.4 GHz, kind: wifi, entity: canonical.wifi.radio.1}
+          - {id: wifi5, label: 5 GHz, kind: wifi, entity: canonical.wifi.radio.2}
+    - key: wifi
+      title: WiFi
+      icon: wifi
+      component: stack
+      config:
+        sections:
+          - key: wifi-neighbours
+            title: RF neighbours
+            component: neighbours
+          - key: wifi-radios
+            title: WiFi
+            component: module
+            config:
+              module: wifi
+    # WLANConfiguration.3 is the guest network on FRITZ!OS. It is a third
+    # radio entry to the generic WiFi module, which is not wrong but is
+    # not legible either; named here so the distinction survives.
+    - key: voice
+      title: Voice
+      icon: phone
+      component: stack
+      config:
+        sections:
+          - key: voice-lines
+            title: Lines
+            component: lines
+            config:
+              lines:
+                - id: line1
+                  label: Line 1
+                  entity: canonical.voice.line.1
+                - id: line2
+                  label: Line 2
+                  entity: canonical.voice.line.2
+          - key: voice-service
+            title: Voice service
+            component: module
+            config:
+              module: voice
+    - key: network-map
+      title: Network map
+      icon: network
+      component: topology
+    - key: monitoring
+      title: Monitoring
+      icon: chart-line
+      component: dashboard
+      config:
+        dashboard: tr098-traffic
+    - key: compliance
+      title: Compliance
+      icon: shield-alert
+      component: compliance
+    - key: actions
+      title: Actions
+      icon: zap
+      component: actions
+    - key: action-log
+      title: Action log
+      icon: history
+      component: tasks
+    - key: events
+      title: Events
+      icon: scroll-text
+      component: events
+    - key: port-forwards
+      title: Port forwards
+      icon: arrow-left-right
+      component: module
+      config:
+        module: port-forwards
+    - key: remote-access
+      title: Remote access
+      icon: shield
+      component: module
+      config:
+        module: remote-access
+        link:
+          address: canonical.interface.wan.ip_address
+          port: port
+          protocol: protocol
+    - key: maintenance
+      title: Maintenance
+      icon: wrench
+      component: maintenance
