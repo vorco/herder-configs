@@ -62,3 +62,47 @@ spec:
       # and serial, so this is the two-field form. A template naming a
       # field the Inform leaves empty matches nothing.
       username: "{OUI}-{SerialNumber}"
+
+# ---------------------------------------------------------------------------
+# USP bootstrap, for once a FRITZ!Box is enrolled as a TR-369 agent
+# (vendors/avm/usp-controller.yaml).
+#
+# Not shipped yet, because it cannot be completed here: the entry needs a
+# real argon2id hash of a password the operator picks, and validation
+# rejects a hash claiming parameters other than the platform's fixed
+# m=65536,t=3,p=4. A placeholder would fail the sync rather than sit
+# harmlessly, so this stays a template.
+#
+# The hash is not a secret and belongs in Git once generated; only the
+# plaintext must not. Generate it locally — nothing here talks to Herder:
+#
+#   echo -n '<the fleet bootstrap password>' \
+#     | argon2 "$(openssl rand -base64 16)" -id -t 3 -k 65536 -p 4 -e
+#
+# Then uncomment, paste the PHC string in, and put the same plaintext in
+# the usp-controller rule's bootstrapPassword (see that file for why it
+# has to arrive by upload rather than through Git).
+#
+# Scope note: a USP agent carries only protocol:usp and, when its
+# endpoint ID uses a scheme that encodes one, oui. The agent's endpoint
+# ID is os::<OUI>-<SerialNumber>, which does carry the OUI, so this pair
+# is the narrowest selector available at connect time. manufacturer,
+# model and firmwareVersion are NOT present on a USP connection and a
+# bootstrap entry behind any of them would admit nobody.
+#
+# ---
+# apiVersion: auth.herder.io/v1alpha1
+# kind: AuthPolicy
+# metadata:
+#   name: avm-fritzbox-usp-bootstrap
+# spec:
+#   priority: 100
+#   deviceSelector:
+#     matchLabels:
+#       oui: "00040E"
+#     matchExpressions:
+#       - key: "protocol:usp"
+#         operator: Exists
+#   bootstrap:
+#     - username: avm-fritzbox-bootstrap
+#       password_hash: "$argon2id$v=19$m=65536,t=3,p=4$<salt>$<hash>"

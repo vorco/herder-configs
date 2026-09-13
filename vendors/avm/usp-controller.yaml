@@ -1,0 +1,109 @@
+# Enrol a FRITZ!Box with Herder's USP controller, over its CWMP session.
+#
+# AVM exposes the USP agent's controller table through TR-069 at
+# InternetGatewayDevice.ManagementServer.X_AVM-DE_USPController.{i}
+# (FRITZ!OS 7.50+), so an ACS that already has a CWMP session can add
+# itself as a Controller without anyone touching the box. That is what
+# this rule does.
+#
+# Confirmed on a live 7530 AX running 256.08.25 (survey f9b010eb,
+# 2116 parameters):
+#
+#   X_AVM-DE_USPController.              RW   (AddObject permitted)
+#   X_AVM-DE_USPController.1.EndpointID  RO   "pen:872:myfritz-usp"
+#   X_AVM-DE_USPControllerAddAllowed     RO   1
+#   X_AVM-DE_USPControllerNumberOfEntries RO  1
+#
+# So the agent is running and already enrolled with AVM's own MyFRITZ
+# controller (PEN 872), and instance 1 is AVM's: it exposes only a
+# read-only EndpointID to the ACS. Herder becomes a SECOND controller in
+# its own instance, which is what the table is for. Never write to
+# instance 1 and never assume Herder's index — AddObject returns it.
+#
+# TWO GATES, neither of them ours:
+#
+#   1. X_AVM-DE_USPControllerAddAllowed is read-only and set by the
+#      subscriber in the FRITZ!Box GUI. AVM's wording: if false "the ACS
+#      is not allowed to add USP controllers and any existing USP
+#      controllers added by the ACS are removed". A box with it off
+#      cannot be enrolled, and a box that has it turned off later loses
+#      Herder's controller silently. The script checks it and gives up
+#      cleanly rather than writing into a table that will be emptied.
+#
+#   2. UseTLS is documented "Must always be set to true", so the
+#      controller endpoint has to terminate TLS. There is no plaintext
+#      option to fall back to.
+#
+# BEFORE ENABLING THIS RULE the deployment needs a reachable USP MTP.
+# On the trial instance there is not one yet: 1883 and 8883 are closed on
+# the ACS host (149.56.109.183) and no WebSocket path answers on 443, so
+# an enrolled box would have nothing to dial. Fill the config block below
+# with the real endpoint, set enabled: true, and the rule does the rest.
+#
+# Everything the operator supplies is in config: rather than baked into
+# the script, following vendors/avm/connection-request.yaml. An empty
+# controllerHost is the "not stood up yet" state and the script no-ops on
+# it, so shipping this rule disabled-and-unconfigured is harmless.
+apiVersion: provisioning.herder.io/v1alpha1
+kind: ProvisioningRule
+metadata:
+  name: avm-usp-controller
+spec:
+  triggers:
+    - first_contact
+    - boot
+  # CWMP-only: X_AVM-DE_USPController.* is reached over the TR-069
+  # session. Once the box is enrolled it ALSO appears as a USP agent with
+  # its own device identity; this rule keeps talking to the CWMP side.
+  deviceSelector:
+    matchLabels:
+      oui: "00040E"
+    matchExpressions:
+      - key: "protocol:cwmp"
+        operator: Exists
+  config:
+    # Herder's USP controller endpoint. Empty disables the rule's body.
+    controllerHost: ""
+    controllerPort: 0
+    # "mqtt" or "websocket" — the only two MTPs AVM implements.
+    mtp: "websocket"
+    # WebSocket only: the path on the controller.
+    controllerPath: "/usp"
+    # Herder's controller Endpoint ID, e.g. "self::herder" or a
+    # "pen:<your-PEN>:<name>" form. AVM's own uses pen:872:myfritz-usp.
+    controllerEndpointID: ""
+    # The bootstrap credential from the USP AuthPolicy (see auth.yaml).
+    # The username is not a secret and belongs here.
+    bootstrapUsername: ""
+    #
+    # bootstrapPassword IS a secret and is deliberately left empty in Git.
+    #
+    # There is no way to read it in from the credential store: the script
+    # SDK exposes credentials only through ExternalService.spec.auth for
+    # outbound HTTP, never as a value a script can read, so the only way
+    # to get a plaintext to device.set is the rule's own config block —
+    # and a config block in Git is a plaintext password in Git, which is
+    # exactly what the auth guide says must not happen.
+    #
+    # Until the platform grows a secret reference for provisioning
+    # config, supply it by uploading an override of this rule through the
+    # API or the Config Editor (the same route the fritzbox-trial
+    # AuthPolicy took) and leave this file as the Git-tracked shape. The
+    # script no-ops while it is empty, so an un-overridden sync is inert.
+    bootstrapPassword: ""
+    # Access rights to grant Herder's controller. All default false on
+    # the box, so anything omitted here stays denied. "system" is what
+    # firmware campaigns, reboots and factory resets need.
+    accessRights:
+      wifi: true
+      internet: true
+      mesh: true
+      system: true
+      voip: false
+      controller: false
+  desired:
+    script: "avm-usp-controller.ts"
+  priority: 50
+  # Deliberately off. Turn on once controllerHost and the credential are
+  # filled in and the USP MTP answers.
+  enabled: false
