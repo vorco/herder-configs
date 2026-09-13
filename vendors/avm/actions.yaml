@@ -1,0 +1,176 @@
+# Device actions for FRITZ!Box, at priority 50 so they displace the
+# baseline's TR-098 profiles (10) for the same capability.
+#
+# The baseline profiles are not wrong; they are aimed at the spec's
+# locations, and AVM moved two of them. Before this file, the Actions tab
+# offered six capabilities on a FRITZ!Box and four could only fault:
+# traceroute and dns_lookup against objects at the IGD root that the
+# survey shows do not exist, speedtest against TR-143 Download/Upload
+# diagnostics that FRITZ!OS does not implement at all, and self_test
+# against an absent SelfTestDiagnostics.
+#
+# This file repairs three of the four. Note what it does NOT do:
+#
+#   self_test has no AVM equivalent to override it with, and ActionProfile
+#   has no `enabled`, `disable` or `suppress` field — a capability can be
+#   REPLACED but not withdrawn. So self_test keeps appearing on the
+#   Actions tab and keeps failing. That needs platform support, not
+#   config.
+#
+# Everything below collects a vendor path directly rather than through a
+# canonical, matching how the baseline profiles collect their roots; the
+# `set:` side goes through canonicals so netdiag-avm decides where the
+# writes land.
+
+apiVersion: actions.herder.io/v1alpha1
+kind: ActionProfile
+metadata:
+  name: traceroute-avm
+spec:
+  capability: traceroute
+  priority: 50
+  deviceSelector:
+    matchLabels:
+      oui: "00040E"
+    matchExpressions:
+      - key: "dataModel:igd"
+        operator: Exists
+  timeout: 6m
+  inputs:
+    - name: host
+      description: Hostname or IP address to trace
+      required: true
+    - name: protocol
+      description: Address family
+      enum: [Any, IPv4, IPv6]
+      default: Any
+  config:
+    tries: "3"
+    timeout_ms: "5000"
+    # Lower than the baseline's 30. AVM prints three probes per hop and
+    # waits the full timeout on each silent one, so a dark-holing route
+    # costs tries x timeout x hops; the captured run reached hop 4 of 8
+    # before the state was still Requested.
+    max_hops: "15"
+  steps:
+    - name: traceroute
+      set:
+        canonical.diagnostics.traceroute.host: "{{ .input.host }}"
+        canonical.diagnostics.traceroute.protocol: "{{ .input.protocol }}"
+        canonical.diagnostics.traceroute.tries: "{{ .config.tries }}"
+        canonical.diagnostics.traceroute.timeout: "{{ .config.timeout_ms }}"
+        canonical.diagnostics.traceroute.max_hops: "{{ .config.max_hops }}"
+        canonical.diagnostics.traceroute.state: Requested
+      awaitParam: canonical.diagnostics.traceroute.state
+      awaitNotIn: [Requested, None]
+      pollInterval: 10s
+      timeout: 5m
+      collect:
+        - InternetGatewayDevice.X_AVM-DE_DiagnosticTools.TraceRouteDiagnostics.
+  normalize: vendors/avm/traceroute-avm.ts
+
+---
+apiVersion: actions.herder.io/v1alpha1
+kind: ActionProfile
+metadata:
+  name: dns-lookup-avm
+spec:
+  capability: dns_lookup
+  priority: 50
+  deviceSelector:
+    matchLabels:
+      oui: "00040E"
+    matchExpressions:
+      - key: "dataModel:igd"
+        operator: Exists
+  timeout: 3m
+  inputs:
+    - name: hostname
+      description: Name to resolve
+      required: true
+    - name: server
+      description: DNS server to ask; blank uses the CPE's own
+  steps:
+    - name: lookup
+      # Only the three leaves AVM implements. An SPV batch is atomic, so
+      # adding the spec's NumberOfRepetitions would fault the whole
+      # trigger on a box that runs the lookup fine — the same trap the
+      # baseline tr098 profile documents for the NVG.
+      set:
+        canonical.diagnostics.dns.hostname: "{{ .input.hostname }}"
+        canonical.diagnostics.dns.server: "{{ .input.server }}"
+        canonical.diagnostics.dns.state: Requested
+      awaitParam: canonical.diagnostics.dns.state
+      awaitNotIn: [Requested, None]
+      pollInterval: 5s
+      timeout: 2m
+      collect:
+        - InternetGatewayDevice.X_AVM-DE_DiagnosticTools.NSLookupDiagnostics.
+  normalize: vendors/avm/dns-lookup-avm.ts
+
+---
+# IP-layer capacity (TR-471 / UDPST) — the throughput test a FRITZ!Box
+# can actually run. FRITZ!OS implements no TR-143 Download or Upload
+# diagnostics, so the baseline `speedtest` capability has nothing to
+# drive; this is the replacement, under the same capability name the
+# TR-181 baseline uses for the same measurement.
+#
+# The control shape is NOT the DiagnosticsState: Requested idiom every
+# other profile here uses. AVM splits it three ways:
+#
+#   IPLayerCapacity.Config.*    the test parameters
+#   IPLayerCapacity.Control.Start   the trigger
+#   IPLayerCapacity.Control.State   what to wait on
+#   IPLayerCapacity.Result.{Success,Result,Message}
+#
+# so `set` writes Config then Start, and awaitParam watches Control.State.
+#
+# These are raw paths, not canonicals: no canonical.diagnostics.capacity.*
+# namespace is declared, and the TR-181 baseline profile likewise writes
+# Device.IP.Diagnostics.IPLayerCapacityMetrics.* directly.
+#
+# UNVERIFIED: the Control.State vocabulary. The survey gives the leaf but
+# not its values, and no test has been run — `awaitNotIn` below is a
+# guess at the in-progress states. Run one against a real UDPST server
+# and correct it before relying on this; a wrong awaitNotIn either
+# returns while the test is still running or hangs until the timeout.
+apiVersion: actions.herder.io/v1alpha1
+kind: ActionProfile
+metadata:
+  name: capacity-test-avm
+spec:
+  capability: capacity_test
+  priority: 50
+  deviceSelector:
+    matchLabels:
+      oui: "00040E"
+    matchExpressions:
+      - key: "dataModel:igd"
+        operator: Exists
+  timeout: 10m
+  inputs:
+    - name: direction
+      description: Which way to measure
+      enum: [Downstream, Upstream]
+      default: Downstream
+  config:
+    # No default, deliberately: a capacity test against a server that is
+    # not there reads as a broken line. AVM also exposes
+    # X_AVM-DE_SpeedtestServer.{TCP,UDP} if the box already knows one.
+    server: ""
+    port: "8000"
+  steps:
+    - name: measure
+      set:
+        InternetGatewayDevice.X_AVM-DE_DiagnosticTools.IPLayerCapacity.Config.Host: "{{ .config.server }}"
+        InternetGatewayDevice.X_AVM-DE_DiagnosticTools.IPLayerCapacity.Config.Port: "{{ .config.port }}"
+        InternetGatewayDevice.X_AVM-DE_DiagnosticTools.IPLayerCapacity.Config.Role: Receiver
+        InternetGatewayDevice.X_AVM-DE_DiagnosticTools.IPLayerCapacity.Config.TestType: "{{ .input.direction }}"
+        InternetGatewayDevice.X_AVM-DE_DiagnosticTools.IPLayerCapacity.Control.Start: "true"
+      awaitParam: InternetGatewayDevice.X_AVM-DE_DiagnosticTools.IPLayerCapacity.Control.State
+      awaitNotIn: [Requested, Running, None, ""]
+      pollInterval: 10s
+      timeout: 8m
+      collect:
+        - InternetGatewayDevice.X_AVM-DE_DiagnosticTools.IPLayerCapacity.
+  normalize: platform/actions/capacity-test.ts
