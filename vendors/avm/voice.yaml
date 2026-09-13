@@ -1,0 +1,144 @@
+# Voice on a FRITZ!Box: the second line is not where TR-104 puts it.
+#
+# The baseline voice-tr104 numbers lines within one VoiceProfile —
+# VoiceProfile.1.Line.1, VoiceProfile.1.Line.2 — which is the ordinary
+# reading of TR-104. AVM numbers PROFILES instead and gives each one a
+# single line. The survey found exactly two (profile, line) pairs on
+# 256.08.25:
+#
+#   VoiceService.1.VoiceProfile.1.Line.1
+#   VoiceService.1.VoiceProfile.2.Line.1
+#
+# and no VoiceProfile.1.Line.2 at all. That is why
+# canonical.voice.line.1.* resolves on a FRITZ!Box while
+# canonical.voice.line.2.* reports raw_missing: the baseline is asking
+# for an object the box does not have.
+#
+# Each profile carries its own SIP block, so a second registrar is
+# reachable at VoiceProfile.2.SIP.*. canonical.voice.sip.registrar and
+# .proxy are not indexed, so they can name only one; they stay on
+# profile 1, as the baseline has them.
+#
+# Line enable is a string here, not a boolean, matching the baseline and
+# the voice module's note: TR-104 issue 1 spells it Disabled/Quiescent/
+# Enabled and issue 2 makes it a boolean, so the module keeps the data
+# model's own vocabulary rather than picking one.
+apiVersion: mapping.herder.io/v1alpha1
+kind: MappingTable
+metadata:
+  name: voice-avm
+spec:
+  mappings:
+    - canonical: canonical.voice.line.1.status
+      valueType: string
+      devicePath: InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.1.Line.1.Status
+    - canonical: canonical.voice.line.1.enable
+      valueType: string
+      devicePath: InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.1.Line.1.Enable
+    - canonical: canonical.voice.line.1.number
+      valueType: string
+      devicePath: InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.1.Line.1.DirectoryNumber
+    - canonical: canonical.voice.line.1.call_state
+      valueType: string
+      devicePath: InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.1.Line.1.CallState
+    - canonical: canonical.voice.line.1.sip.username
+      valueType: string
+      devicePath: InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.1.Line.1.SIP.AuthUserName
+    - canonical: canonical.voice.line.1.sip.password
+      valueType: string
+      devicePath: InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.1.Line.1.SIP.AuthPassword
+
+    # Line 2 is VoiceProfile.2.Line.1, not VoiceProfile.1.Line.2.
+    - canonical: canonical.voice.line.2.status
+      valueType: string
+      devicePath: InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.2.Line.1.Status
+    - canonical: canonical.voice.line.2.enable
+      valueType: string
+      devicePath: InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.2.Line.1.Enable
+    - canonical: canonical.voice.line.2.number
+      valueType: string
+      devicePath: InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.2.Line.1.DirectoryNumber
+    - canonical: canonical.voice.line.2.call_state
+      valueType: string
+      devicePath: InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.2.Line.1.CallState
+    - canonical: canonical.voice.line.2.sip.username
+      valueType: string
+      devicePath: InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.2.Line.1.SIP.AuthUserName
+    - canonical: canonical.voice.line.2.sip.password
+      valueType: string
+      devicePath: InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.2.Line.1.SIP.AuthPassword
+
+    - canonical: canonical.voice.sip.registrar
+      valueType: string
+      devicePath: InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.1.SIP.RegistrarServer
+    - canonical: canonical.voice.sip.proxy
+      valueType: string
+      devicePath: InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.1.SIP.ProxyServer
+
+---
+# Voice telemetry: line state, and the handset inventory behind it.
+#
+# A FRITZ!Box is a phone system as much as a router, and none of it was
+# collected. Line registration is the support-call question ("my phone
+# stopped working"); the PhyInterface table is what makes the answer
+# legible, because it is where the handsets have names.
+#
+# 23 PhyInterface instances on the surveyed 7530 AX: the FON ports and
+# the DECT slots. X_AVM-DE_FriendlyName is the name the subscriber gave
+# the handset, which turns "PhyInterface.7" into "Kitchen".
+#
+# No canonical namespace covers the AVM extensions, so they are collected
+# raw. canonical.operator.* is available if they later need a module.
+#
+# Line status passive (interval 0, rides the sessions that already
+# happen); the inventory hourly, because handsets are registered and
+# renamed rarely. Never the SIP password: a collected password is a
+# password in telemetry history.
+apiVersion: telemetry.herder.io/v1alpha1
+kind: TelemetryProfile
+metadata:
+  name: avm-fritzbox-voice
+spec:
+  priority: 50
+  deviceSelector:
+    matchLabels:
+      oui: "00040E"
+    matchExpressions:
+      - key: "dataModel:igd"
+        operator: Exists
+  parameters:
+    # Line state, both profiles. Wildcarded so a box with more or fewer
+    # profiles than this one collects what it actually has.
+    - path: "InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.{i}.Line.{i}.Status"
+      interval: 0
+    - path: "InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.{i}.Line.{i}.CallState"
+      interval: 0
+    - path: "InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.{i}.Line.{i}.Enable"
+      interval: 0
+    - path: "InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.{i}.Line.{i}.DirectoryNumber"
+      interval: 0
+    - path: "InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.{i}.Enable"
+      interval: 3600
+    - path: "InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.{i}.Name"
+      interval: 3600
+    - path: "InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.{i}.SIP.RegistrarServer"
+      interval: 3600
+    - path: "InternetGatewayDevice.Services.VoiceService.1.VoiceProfile.{i}.SIP.X_AVM-DE_TransportUsed"
+      interval: 3600
+    # Handset and FON-port inventory.
+    - path: "InternetGatewayDevice.Services.VoiceService.1.PhyInterface.{i}.Description"
+      interval: 3600
+    - path: "InternetGatewayDevice.Services.VoiceService.1.PhyInterface.{i}.PhyPort"
+      interval: 3600
+    - path: "InternetGatewayDevice.Services.VoiceService.1.PhyInterface.{i}.X_AVM-DE_FriendlyName"
+      interval: 3600
+    - path: "InternetGatewayDevice.Services.VoiceService.1.PhyInterface.{i}.X_AVM-DE_MSNList"
+      interval: 3600
+    - path: "InternetGatewayDevice.Services.VoiceService.1.PhyInterface.{i}.X_AVM-DE_CallWaiting"
+      interval: 3600
+    - path: "InternetGatewayDevice.Services.VoiceService.1.PhyInterface.{i}.X_AVM-DE_MessageWaitIndication"
+      interval: 3600
+    - path: "InternetGatewayDevice.Services.VoiceService.1.PhyInterface.{i}.X_AVM-DE_RingBlock"
+      interval: 3600
+    - path: "InternetGatewayDevice.Services.VoiceService.1.PhyInterface.{i}.X_AVM-DE_SIPClientRegistration_from_Internet"
+      interval: 3600
