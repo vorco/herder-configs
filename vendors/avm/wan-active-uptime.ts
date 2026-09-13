@@ -23,6 +23,14 @@
 // Both families also expose duplicate instances (.1 and .2 carry
 // byte-identical values, in BOTH modes), so lowest instance wins.
 //
+// WHEN THIS RUNS: a computed entry is evaluated when one of its declared
+// inputs CHANGES, not on every session and not on resolve. A freshly
+// deployed computed canonical therefore reads as unresolved
+// (raw_missing) until an input moves, which on a stable WAN can be a
+// while — Uptime ticking is usually what triggers it first. That is not
+// a broken mapping, and canonical-resolve's updated_at is the timestamp
+// of the last computation rather than of the last session.
+//
 // One script, one output: canonical.interface.wan.ip_address has its own
 // file because a computed entry writes exactly the path it declares.
 

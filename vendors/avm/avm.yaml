@@ -298,6 +298,16 @@ spec:
       interval: 3600
     - path: "InternetGatewayDevice.ManagementServer.UpgradesManaged"
       interval: 3600
+    # The Management group on the device page renders
+    # canonical.mgmt.periodic_inform_interval, and nothing was re-reading
+    # it: the stored value was still the 0 from the very first Inform,
+    # hours after provisioning had set a real interval. Same reason the
+    # neighbouring ManagementServer settings are here — so their live
+    # values are visible on the device rather than their bootstrap ones.
+    - path: "InternetGatewayDevice.ManagementServer.PeriodicInformEnable"
+      interval: 3600
+    - path: "InternetGatewayDevice.ManagementServer.PeriodicInformInterval"
+      interval: 3600
     - path: "InternetGatewayDevice.ManagementServer.X_AVM-DE_TR069FirmwareDownloadEnabled"
       interval: 3600
     - path: "InternetGatewayDevice.ManagementServer.X_AVM-DE_ConnectionRequestEnable"
