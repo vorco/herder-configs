@@ -1,0 +1,29 @@
+# CVE-feed binding for the FRITZ!Box 7530 AX.
+#
+# Scoped to manufacturer + model (productClass is the generic "FRITZ!Box"
+# and would pull every AVM model). The compliance role refreshes this
+# product's public records and matches them against each device's reported
+# firmwareVersion.
+#
+# Version shape: the box reports DeviceInfo.SoftwareVersion like
+# "256.08.25", where 256 is the hardware id and 08.25 is FRITZ!OS 8.25.
+# NVD records the firmware as plain "8.25"-style, so versionExtract strips
+# the "256." hardware prefix and any leading zero on the FRITZ!OS major.
+# A version the expression cannot read is skipped and counted, never
+# guessed. (verify: check GET /devices/{id}/compliance matches after the
+# first sweep; adjust versionExtract if the feed spells it differently.)
+#
+# Plain 7530 (non-AX) runs a different hardware-id firmware line; add its
+# ModelName + CpeBinding once the second box reports its exact strings.
+apiVersion: compliance.herder.io/v1alpha1
+kind: CpeBinding
+metadata:
+  name: avm-fritzbox-7530ax
+spec:
+  deviceSelector:
+    matchLabels:
+      manufacturer: AVM
+      model: "FRITZ!Box 7530 AX"
+  cpe: "cpe:2.3:o:avm:fritz!box_7530_ax_firmware"
+  versionExtract: "^(?:256\\.)?0*([0-9]+\\.[0-9].*)$"
+  unspecifiedVersions: ignore

@@ -1,0 +1,44 @@
+# Make ACS-initiated Connection Requests work on FRITZ!Box.
+#
+# AVM gates the CR listener behind a source-IP filter
+# (X_AVM-DE_ConnectionRequestSecurityEnable): the box only answers a CR
+# from an address that resolves from the ACS hostname, and rejects
+# everything else at the socket with "deny CR, reason (6) - invalid
+# client ip address". On the diagnostic dump this rejected ~120 CRs over
+# three weeks, so every ACS-initiated session silently failed and only
+# CPE-initiated informs got through.
+#
+# This rule turns the CR listener on and, when the operator supplies
+# Herder's egress CIDR(s) in config.ipNetList, writes them into the
+# allow-list and keeps the security filter on. With no list configured it
+# turns the filter off so CRs work fleet-wide out of the box — weaker, but
+# it beats a fleet that cannot be reached on demand. Set ipNetList once
+# the egress ranges are confirmed (they show as the denied peer_inaddr in
+# a box's tr069 log, and the ACS is 149.56.109.183 in the capture).
+#
+# CWMP-only: these are ManagementServer.X_AVM-DE_* parameters a USP agent
+# does not implement. Runs on first contact and every boot, so a box that
+# resets its CR config is repaired on its next boot.
+apiVersion: provisioning.herder.io/v1alpha1
+kind: ProvisioningRule
+metadata:
+  name: avm-connection-request
+spec:
+  triggers:
+    - first_contact
+    - boot
+  deviceSelector:
+    matchLabels:
+      oui: "00040E"
+    matchExpressions:
+      - key: "protocol:cwmp"
+        operator: Exists
+  config:
+    # Comma-separated IPv4/IPv6 addresses or subnets allowed to issue a
+    # connection request, e.g. "203.0.113.10,2001:db8::/48". Empty means
+    # "disable the source-IP filter instead".
+    ipNetList: ""
+  desired:
+    script: "avm-connection-request.ts"
+  priority: 50
+  enabled: true

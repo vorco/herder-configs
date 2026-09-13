@@ -1,0 +1,267 @@
+# AVM FRITZ!Box (TR-098 / InternetGatewayDevice.*) vendor support.
+#
+# AVM's CWMP data model is IGD. TR-181 (Device.*) exists on FRITZ!OS only
+# behind the USP agent, and USP is compiled out of the shipping fleet
+# firmware (256.08.25, OEM avme), so everything here is IGD.
+#
+# What the baseline already covers with no vendor work: identity,
+# management credentials, standard WiFi/NAT/voice, diagnostics, and the
+# LAN switch ports. This directory adds the two things the baseline gets
+# wrong or cannot see on a FRITZ!Box:
+#   1. the WAN IP/uptime, which live on WANPPPConnection (PPPoE) here, not
+#      WANIPConnection where the baseline looks; and
+#   2. the X_AVM-DE_* telemetry leaves (WAN shaping, DSL line health,
+#      per-port link state, firmware/maintenance posture).
+#
+# Selector note: productClass is the generic string "FRITZ!Box" across
+# every AVM model, so it is useless for scoping — we key on the AVM OUI
+# 00040E instead. Model-specific documents (compliance, any future UI)
+# add `model In [...]` with the exact ModelName strings.
+#
+# Instance numbers marked "verify" below are taken from the FRITZ!OS 8.24
+# data model and one 7530 AX diagnostic dump, not yet from a live Herder
+# survey (the fleet had not authenticated when this was written). Re-check
+# them with survey-datamodel once a box registers.
+
+# ---------------------------------------------------------------------------
+# interfaces-avm: baseline interfaces-tr098, with the WAN address/uptime
+# re-pointed at WANPPPConnection.
+#
+# A FRITZ!Box on PPPoE (DSL, or Ethernet/ATA WAN to an ONT as on the
+# 7530 AX here) carries its external address on
+# WANPPPConnection.{i}.ExternalIPAddress, not WANIPConnection. The
+# baseline's instanceAlias resolves against WANIPConnection only, so on a
+# PPPoE box canonical.interface.wan.ip_address and .uptime resolve to
+# nothing — the WAN group on the device page renders blank and the
+# remote-access module's link (which reads wan.ip_address) breaks.
+#
+# The instance is found, not assumed: ConnectionStatus is the
+# discriminator (matchType EqualFold because AVM reports "Connected" but
+# other firmware casings exist), lowest matching instance wins, and
+# fallbackIndex keeps instance 1 for anything that reports no status.
+# Everything else (LAN ports wildcarded, WAN L1 status/type/counters) is
+# identical to interfaces-tr098.
+apiVersion: mapping.herder.io/v1alpha1
+kind: MappingTable
+metadata:
+  name: interfaces-avm
+spec:
+  mappings:
+    - canonical: canonical.interface.lan.{i}.status
+      valueType: string
+      devicePath: InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.{i}.Status
+    - canonical: canonical.interface.lan.{i}.enable
+      valueType: boolean
+      devicePath: InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.{i}.Enable
+    - canonical: canonical.interface.lan.{i}.mac
+      valueType: string
+      devicePath: InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.{i}.MACAddress
+    - canonical: canonical.interface.lan.{i}.bytes_sent
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.{i}.Stats.BytesSent
+    - canonical: canonical.interface.lan.{i}.bytes_received
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.{i}.Stats.BytesReceived
+    - canonical: canonical.interface.wan.status
+      valueType: string
+      devicePath: InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.PhysicalLinkStatus
+    - canonical: canonical.interface.wan.type
+      valueType: string
+      devicePath: InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.WANAccessType
+    - canonical: canonical.interface.wan.bytes_sent
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.TotalBytesSent
+    - canonical: canonical.interface.wan.bytes_received
+      valueType: unsignedint
+      devicePath: InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.TotalBytesReceived
+    # WAN address/uptime on the PPPoE connection. Instance found by
+    # ConnectionStatus. (verify: WANConnectionDevice.1 and the PPP
+    # instance against a live survey.)
+    - canonical: canonical.interface.wan.ip_address
+      valueType: string
+      instanceAlias:
+        object: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.
+        matchBy: ConnectionStatus
+        matchType: EqualFold
+        matchValue: Connected
+        fallbackIndex: 1
+      pathTemplate: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.{index}.ExternalIPAddress
+    - canonical: canonical.interface.wan.uptime
+      valueType: unsignedint
+      instanceAlias:
+        object: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.
+        matchBy: ConnectionStatus
+        matchType: EqualFold
+        matchValue: Connected
+        fallbackIndex: 1
+      pathTemplate: InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.{index}.Uptime
+
+---
+# The mapping profile. Priority 50 beats baseline-tr098 (10).
+#
+# Binding is single-winner: the winning profile's table list is the
+# device's ENTIRE mapping vocabulary. So the whole baseline-tr098 list is
+# restated here, with interfaces-tr098 swapped for interfaces-avm. Drop
+# any of these and the FRITZ!Box loses that vocabulary — omit mgmt-tr098
+# and it has no connection_request_url and becomes undispatchable. Keep
+# this list in step with baseline/tr098/mappings.yaml (baseline-tr098).
+#
+# remote-access-tr098 stays (it binds enable/port/protocol from
+# UserInterface.RemoteAccess, which AVM has). The remote-UI account's
+# username/password live under InternetGatewayDevice.User.{i}; which slot
+# is the remote account is per-firmware and needs a survey, so
+# remote-access-avm is deferred rather than guessed (a wrong instance
+# faults every session).
+apiVersion: mapping.herder.io/v1alpha1
+kind: MappingProfile
+metadata:
+  name: avm-fritzbox-tr098
+spec:
+  priority: 50
+  deviceSelector:
+    matchLabels:
+      oui: "00040E"
+    matchExpressions:
+      - key: "dataModel:igd"
+        operator: Exists
+      - key: "protocol:cwmp"
+        operator: Exists
+  parameterMappings:
+    - device-info-tr098
+    - mgmt-tr098
+    - diagnostics-tr098
+    - netdiag-tr098
+    - remote-access-tr098
+    - wifi-tr098
+    - wifi-bssid-tr098
+    - wifi-capability-tr098
+    - interfaces-avm
+    - voice-tr104
+    - nat-tr098
+
+---
+# WAN telemetry the baseline tr098-wan cannot see: AVM shaping rates and
+# the WAN-access-switch state. All interval 0 (passive, rides the sessions
+# that already happen). Never a SET, never a passphrase.
+apiVersion: telemetry.herder.io/v1alpha1
+kind: TelemetryProfile
+metadata:
+  name: avm-fritzbox-wan
+spec:
+  priority: 50
+  deviceSelector:
+    matchLabels:
+      oui: "00040E"
+    matchExpressions:
+      - key: "dataModel:igd"
+        operator: Exists
+  parameters:
+    - path: "InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.X_AVM-DE_UpstreamCurrentMaxSpeed"
+      interval: 0
+    - path: "InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.X_AVM-DE_DownstreamCurrentMaxSpeed"
+      interval: 0
+    - path: "InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.X_AVM-DE_UpstreamShapedRate"
+      interval: 0
+    - path: "InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.X_AVM-DE_DownstreamShapedRate"
+      interval: 0
+    - path: "InternetGatewayDevice.WANDevice.1.WANCommonInterfaceConfig.X_AVM-DE_WANAccessSwitchState"
+      interval: 0
+    - path: "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.LastConnectionError"
+      interval: 0
+    - path: "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.X_AVM-DE_Stackmode"
+      interval: 0
+
+---
+# DSL line health, for DSL-connected subscribers. The 7530 is a DSL box;
+# the AX unit surveyed happens to be on Ethernet/ATA WAN with DSL
+# inactive, so on that unit these resolve empty (harmless). Status leaves
+# passive; error counters every 15 min. (verify the object exists on a
+# DSL-connected box.)
+apiVersion: telemetry.herder.io/v1alpha1
+kind: TelemetryProfile
+metadata:
+  name: avm-fritzbox-dsl
+spec:
+  priority: 50
+  deviceSelector:
+    matchLabels:
+      oui: "00040E"
+    matchExpressions:
+      - key: "dataModel:igd"
+        operator: Exists
+  parameters:
+    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.Status"
+      interval: 0
+    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.StandardUsed"
+      interval: 0
+    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.UpstreamCurrRate"
+      interval: 0
+    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.DownstreamCurrRate"
+      interval: 0
+    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.UpstreamNoiseMargin"
+      interval: 0
+    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.DownstreamNoiseMargin"
+      interval: 0
+    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.UpstreamAttenuation"
+      interval: 0
+    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.DownstreamAttenuation"
+      interval: 0
+    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.Stats.Total.CRCErrors"
+      interval: 900
+    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.Stats.Total.FECErrors"
+      interval: 900
+    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.Stats.Total.ErroredSecs"
+      interval: 900
+    - path: "InternetGatewayDevice.WANDevice.1.WANDSLInterfaceConfig.Stats.Total.SeverelyErroredSecs"
+      interval: 900
+
+---
+# System posture: per-port link state, firmware/maintenance/auto-update
+# and the connection-request settings we manage in connection-request.ts,
+# so their live values are visible on the device. Usernames only, never a
+# password (a collected password is a password in telemetry history).
+apiVersion: telemetry.herder.io/v1alpha1
+kind: TelemetryProfile
+metadata:
+  name: avm-fritzbox-system
+spec:
+  priority: 50
+  deviceSelector:
+    matchLabels:
+      oui: "00040E"
+    matchExpressions:
+      - key: "dataModel:igd"
+        operator: Exists
+  parameters:
+    - path: "InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.X_AVM-DE_EthPort.{i}.Name"
+      interval: 0
+    - path: "InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.X_AVM-DE_EthPort.{i}.Linkstate"
+      interval: 0
+    - path: "InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.X_AVM-DE_EthPort.{i}.Speed"
+      interval: 0
+    - path: "InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.X_AVM-DE_EthPort.{i}.Portmode"
+      interval: 0
+    - path: "InternetGatewayDevice.DeviceInfo.AdditionalSoftwareVersion"
+      interval: 3600
+    - path: "InternetGatewayDevice.DeviceInfo.X_AVM-DE_VendorUnsupportedModifications"
+      interval: 3600
+    - path: "InternetGatewayDevice.UserInterface.UpgradeAvailable"
+      interval: 3600
+    - path: "InternetGatewayDevice.UserInterface.X_AVM-DE_AutoUpdate"
+      interval: 3600
+    - path: "InternetGatewayDevice.UserInterface.X_AVM-DE_MaintenanceWindow.Enabled"
+      interval: 3600
+    - path: "InternetGatewayDevice.UserInterface.X_AVM-DE_MaintenanceWindow.Start"
+      interval: 3600
+    - path: "InternetGatewayDevice.ManagementServer.UpgradesManaged"
+      interval: 3600
+    - path: "InternetGatewayDevice.ManagementServer.X_AVM-DE_TR069FirmwareDownloadEnabled"
+      interval: 3600
+    - path: "InternetGatewayDevice.ManagementServer.X_AVM-DE_ConnectionRequestEnable"
+      interval: 3600
+    - path: "InternetGatewayDevice.ManagementServer.X_AVM-DE_ConnectionRequestSecurityEnable"
+      interval: 3600
+    - path: "InternetGatewayDevice.ManagementServer.X_AVM-DE_ConnectionRequestIPNetList"
+      interval: 3600
+    - path: "InternetGatewayDevice.Time.Status"
+      interval: 3600
